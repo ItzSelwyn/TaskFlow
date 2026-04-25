@@ -152,14 +152,40 @@ api         → Backend API (port 4000)
 frontend    → React app via Nginx (port 80)
 ```
 
-**Start all services:**
+**Quick Setup:**
+
+1. **Copy environment template:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` and add your secrets:**
+   - Generate JWT secrets (see [Environment Variables](#-environment-variables) section)
+   - Add OAuth credentials (optional)
+   - Add SMTP credentials (optional)
+
+3. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Access the app:**
+   - Frontend: http://localhost
+   - API: http://localhost:4000
+   - API Health: http://localhost:4000/api/health
+
+**Verify everything is running:**
 ```bash
-docker-compose up -d
+docker-compose ps
+# Should show all 4 containers in "Up" status
+
+docker-compose logs api
+# Should show "Server running on port 4000"
 ```
 
 **View logs:**
 ```bash
-docker-compose logs -f api        # Backend logs
+docker-compose logs -f api        # Backend logs (follow mode)
 docker-compose logs -f frontend   # Frontend logs
 ```
 
@@ -168,9 +194,14 @@ docker-compose logs -f frontend   # Frontend logs
 docker-compose down
 ```
 
-**Rebuild images after code changes:**
+**Rebuild after code changes:**
 ```bash
 docker-compose build && docker-compose up -d
+```
+
+**Clean up everything (including data):**
+```bash
+docker-compose down -v    # -v removes volumes (database data)
 ```
 
 ---
@@ -233,58 +264,153 @@ npm run build
 
 ## 🔐 Environment Variables
 
-### Backend (`.env`)
+### Setup Overview
 
-**Required Variables:**
-```env
-# Server
-NODE_ENV=development              # development | production | test
-PORT=4000
+**One `.env` file in the root directory** is used for both Docker and local development:
 
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/taskflow
-
-# Redis (for session caching)
-REDIS_URL=redis://localhost:6379
-
-# JWT Secrets (MUST be minimum 32 characters)
-JWT_SECRET=your-super-secret-key-minimum-32-chars-long
-JWT_REFRESH_SECRET=another-super-secret-key-minimum-32-chars-long
-
-# Frontend URL (for CORS)
-CLIENT_URL=http://localhost:5173
-
-# Token expiry
-JWT_EXPIRES_IN=15m               # Access token lifetime
-JWT_REFRESH_EXPIRES_IN=7d        # Refresh token lifetime
+```
+taskflow/
+├── .env              ← Copy .env.example to .env and fill in your values
+├── .env.example      ← Template with all variables and descriptions
+├── docker-compose.yml
+└── ...
 ```
 
-**Optional OAuth Variables:**
+Docker automatically loads environment variables from `.env` via the `env_file: .env` directive in `docker-compose.yml`.
+
+### Complete Environment Variables (`.env`)
+
+**Server Configuration:**
 ```env
-# Google OAuth (from Google Cloud Console)
+NODE_ENV=development              # development | production | test
+PORT=4000                         # Backend server port
+```
+
+**Database Configuration:**
+```env
+# PostgreSQL database URL
+# For Docker: use as-is (postgres service)
+# For local dev: postgresql://user:pass@localhost:5432/taskflow
+DATABASE_URL=postgresql://taskflow:taskflow@localhost:5432/taskflow
+
+# Redis for session caching
+# For Docker: use as-is (redis service)
+# For local dev: redis://localhost:6379
+REDIS_URL=redis://localhost:6379
+```
+
+**JWT Authentication (REQUIRED):**
+```env
+# REQUIRED - Must be minimum 32 characters!
+# Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+JWT_SECRET=your-super-secret-key-minimum-32-chars-long-generated-with-crypto
+JWT_REFRESH_SECRET=another-super-secret-key-minimum-32-chars-long-generated-with-crypto
+
+# Token expiry times
+JWT_EXPIRES_IN=15m               # Access token lifetime (short-lived)
+JWT_REFRESH_EXPIRES_IN=7d        # Refresh token lifetime (long-lived)
+```
+
+**Frontend URL (CORS):**
+```env
+# URL where frontend is running (for CORS)
+# For Docker: http://localhost
+# For local dev: http://localhost:5173
+CLIENT_URL=http://localhost:5173
+```
+
+**Optional OAuth2 (leave empty if not using):**
+```env
+# Google OAuth Credentials
+# Setup: https://console.cloud.google.com → APIs & Services → Credentials
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
 
-# GitHub OAuth (from GitHub Developer Settings)
+# GitHub OAuth Credentials
+# Setup: https://github.com/settings/developers → OAuth Apps
 GITHUB_CLIENT_ID=Ov23lix...
 GITHUB_CLIENT_SECRET=xxxxxxx
 ```
 
-**Optional Email Variables:**
+**Optional Email Notifications (leave empty if not using):**
 ```env
-# SMTP Configuration (for email notifications)
-SMTP_HOST=smtp.ethereal.email    # Or your email provider
-SMTP_PORT=587
-SMTP_USER=your-email@example.com
-SMTP_PASS=your-password
-SMTP_FROM=noreply@taskflow.com
+# SMTP Configuration for email notifications
+# For testing: use https://ethereal.email (free temporary accounts)
+# For production: use your email provider (Gmail, SendGrid, etc.)
+
+SMTP_HOST=smtp.ethereal.email    # Email provider's SMTP host
+SMTP_PORT=587                    # SMTP port (usually 587 or 465)
+SMTP_USER=your-email@example.com # Email account username
+SMTP_PASS=your-password          # Email account password
+SMTP_FROM=TaskFlow <noreply@taskflow.app>  # Sender email
 ```
 
-**Generating JWT Secrets:**
+### Generating Secure Secrets
+
+**Generate JWT secrets:**
 ```bash
-# Generate a secure random secret
+# Generate 32-character (64-hex-digit) random secret
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# Example output:
+# 4d7bb1547f1766266c0d4588ad2558cdb1a05eda30f3a99f72d5c08ee17ca7bb
 ```
+
+**Multiple secrets for different environments:**
+```bash
+# Generate development secret
+node -e "console.log('DEV:', require('crypto').randomBytes(32).toString('hex'))"
+
+# Generate production secret
+node -e "console.log('PROD:', require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### Environment-Specific Configuration
+
+**For Docker:**
+```env
+NODE_ENV=production
+DATABASE_URL=postgresql://taskflow:taskflow@postgres:5432/taskflow
+REDIS_URL=redis://redis:6379
+CLIENT_URL=http://yourdomain.com
+```
+
+**For Local Development:**
+```env
+NODE_ENV=development
+DATABASE_URL=postgresql://taskflow:taskflow@localhost:5432/taskflow
+REDIS_URL=redis://localhost:6379
+CLIENT_URL=http://localhost:5173
+```
+
+**For Production:**
+```env
+NODE_ENV=production
+DATABASE_URL=postgresql://user:pass@prod-db.example.com:5432/taskflow
+REDIS_URL=redis://prod-redis.example.com:6379
+CLIENT_URL=https://yourdomain.com
+JWT_SECRET=<use long random secret>
+JWT_REFRESH_SECRET=<use long random secret>
+GOOGLE_CLIENT_ID=<from Google Cloud>
+GOOGLE_CLIENT_SECRET=<from Google Cloud>
+# ... other vars
+```
+
+### Important Notes
+
+⚠️ **Never commit `.env` file to git** — it contains secrets!
+- `.env` is in `.gitignore`
+- Only `.env.example` should be in version control
+- Each deployment gets its own `.env`
+
+✅ **Always use strong random secrets**
+- Minimum 32 characters for JWT secrets
+- Use `node` command above to generate
+- Never reuse secrets across environments
+
+✅ **OAuth is optional** — leave empty if not using
+- App works fine with just email/password auth
+- Add OAuth anytime by filling in credentials and restarting
 
 ---
 
